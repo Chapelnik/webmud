@@ -111,7 +111,7 @@ server.on('upgrade', (request, socket, head) => {
   ws.emit('open');
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 WebSocket-Telnet прокси запущен на порту ${PORT}`);
   console.log(`   Пример подключения: ws://localhost:${PORT}/?host=mud.example.com&port=4000`);
 });
