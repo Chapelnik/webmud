@@ -19,6 +19,10 @@ class MUDClient {
     this.connectionStatus = document.getElementById('connection-status');
     this.reconnectBtn = document.getElementById('reconnect-btn');
     
+    // Настройки прокси
+    this.proxyHost = window.location.hostname;
+    this.proxyPort = '8080';
+    
     this.init();
   }
   
@@ -66,9 +70,9 @@ class MUDClient {
     this.connectBtn.textContent = 'Подключение...';
     
     try {
-      // Note: WebSocket connection to telnet servers requires a proxy
-      // For direct telnet connections, you would need a backend proxy server
-      const wsUrl = `ws://${this.serverAddress}:${this.serverPort}`;
+      // Подключение через WebSocket-Telnet прокси
+      // Формируем URL для подключения к прокси с параметрами целевого сервера
+      const wsUrl = `ws://${this.proxyHost}:${this.proxyPort}/?host=${encodeURIComponent(this.serverAddress)}&port=${encodeURIComponent(this.serverPort)}`;
       
       this.socket = new WebSocket(wsUrl);
       
@@ -82,7 +86,26 @@ class MUDClient {
       };
       
       this.socket.onmessage = (event) => {
-        this.handleServerMessage(event.data);
+        // Проверяем, не является ли сообщение JSON с ошибкой или статусом закрытия
+        try {
+          const data = JSON.parse(event.data);
+          if (data.error) {
+            this.appendMessage(`✗ Ошибка сервера: ${data.error}`, 'error-message');
+            return;
+          }
+          if (data.closed) {
+            this.appendMessage('✗ Соединение с сервером закрыто', 'error-message');
+            this.socket.close();
+            return;
+          }
+          // Если это обычный текст в JSON, используем его
+          if (typeof data === 'string') {
+            this.handleServerMessage(data);
+          }
+        } catch (e) {
+          // Это не JSON, обрабатываем как обычный текст
+          this.handleServerMessage(event.data);
+        }
       };
       
       this.socket.onclose = (event) => {
@@ -120,7 +143,13 @@ class MUDClient {
     // Clean and display the message from server
     const cleanedData = this.cleanTelnetData(data);
     if (cleanedData.trim()) {
-      this.appendMessage(cleanedData, 'server-response');
+      // Разбиваем на строки и отображаем каждую
+      const lines = cleanedData.split('\n');
+      lines.forEach(line => {
+        if (line.trim()) {
+          this.appendMessage(line, 'server-response');
+        }
+      });
     }
   }
   
