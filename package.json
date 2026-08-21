@@ -1,0 +1,18 @@
+{
+  "name": "mud-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Веб-клиент для MUD (Multi User Dungeon) игр",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["mud", "game", "client"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^8.2.2"
+  }
+}
