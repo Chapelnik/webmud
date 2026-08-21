@@ -89,15 +89,32 @@ class MUDClient {
         // Проверяем, не является ли сообщение JSON с ошибкой или статусом закрытия
         try {
           const data = JSON.parse(event.data);
-          if (data.error) {
-            this.appendMessage(`✗ Ошибка сервера: ${data.error}`, 'error-message');
+          
+          if (data.type === 'error') {
+            this.appendMessage(`✗ Ошибка сервера: ${data.message}`, 'error-message');
             return;
           }
-          if (data.closed) {
-            this.appendMessage('✗ Соединение с сервером закрыто', 'error-message');
-            this.socket.close();
+          
+          if (data.type === 'status') {
+            this.appendMessage(`✓ ${data.message}`, 'system-message');
             return;
           }
+          
+          if (data.type === 'data' && data.payload) {
+            // Декодируем Base64 в бинарные данные
+            const binaryData = atob(data.payload);
+            const bytes = new Uint8Array(binaryData.length);
+            for (let i = 0; i < binaryData.length; i++) {
+              bytes[i] = binaryData.charCodeAt(i);
+            }
+            
+            // Пробуем декодировать как CP1251 (Windows-1251) - наиболее частая кодировка для русскоязычных MUD
+            // Если видите кракозябры, можно попробовать другую кодировку
+            const text = this.decodeWindows1251(bytes);
+            this.handleServerMessage(text);
+            return;
+          }
+          
           // Если это обычный текст в JSON, используем его
           if (typeof data === 'string') {
             this.handleServerMessage(data);
@@ -143,24 +160,73 @@ class MUDClient {
     // Clean and display the message from server
     const cleanedData = this.cleanTelnetData(data);
     if (cleanedData.trim()) {
-      // Разбиваем на строки и отображаем каждую
-      const lines = cleanedData.split('\n');
+      // Разбиваем на строки и отображаем каждую с сохранением форматирования
+      const lines = cleanedData.split(/\r?\n/);
       lines.forEach(line => {
-        if (line.trim()) {
-          this.appendMessage(line, 'server-response');
-        }
+        // Создаем элемент для каждой строки, сохраняя пробелы
+        const lineElement = document.createElement('div');
+        lineElement.className = 'server-response';
+        // Используем white-space: pre-wrap для сохранения форматирования
+        lineElement.style.whiteSpace = 'pre-wrap';
+        lineElement.textContent = line;
+        this.gameOutput.appendChild(lineElement);
       });
+    } else if (cleanedData === '') {
+      // Пустая строка - добавляем разделитель
+      const spacer = document.createElement('div');
+      spacer.className = 'server-response';
+      spacer.style.height = '4px';
+      this.gameOutput.appendChild(spacer);
     }
   }
   
   cleanTelnetData(data) {
-    // Remove Telnet control codes if present
+    // Удаляем только управляющие символы Telnet, но оставляем пробелы и переносы строк
     if (typeof data === 'string') {
-      return data.replace(/[\x00-\x1F\x7F-\x9F]/g, '')
-                 .replace(/\u001b\[[0-9;]*m/g, '') // Remove ANSI color codes
-                 .trim();
+      return data.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+                 .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, ''); // Удаляем ANSI коды
     }
-    return String(data).trim();
+    return String(data);
+  }
+  
+  /**
+   * Декодирует байты в строку Windows-1251 (CP1251)
+   */
+  decodeWindows1251(bytes) {
+    const win1251Map = {
+      128: 'Ђ', 129: 'Ѓ', 130: '‚', 131: 'ѓ', 132: '„', 133: '…', 134: '†', 135: '‡',
+      136: '€', 137: '‰', 138: 'Љ', 139: '‹', 140: 'Њ', 141: 'Ќ', 142: 'Ћ', 143: 'Џ',
+      144: 'ђ', 145: '‘', 146: '’', 147: '"', 148: '"', 149: '•', 150: '–', 151: '—',
+      152: '', 153: '™', 154: 'љ', 155: '›', 156: 'њ', 157: 'ќ', 158: 'ћ', 159: 'џ',
+      160: ' ', 161: 'Ў', 162: 'ў', 163: 'Ј', 164: '¤', 165: 'Ґ', 166: '¦', 167: '§',
+      168: 'Ё', 169: '©', 170: 'Є', 171: '«', 172: '¬', 173: '-', 174: '®', 175: 'Ї',
+      176: '°', 177: '±', 178: 'І', 179: 'і', 180: 'ґ', 181: 'µ', 182: '¶', 183: '·',
+      184: 'ё', 185: '№', 186: 'є', 187: '»', 188: 'ј', 189: 'Ѕ', 190: 'ѕ', 191: 'ї',
+      192: 'А', 193: 'Б', 194: 'В', 195: 'Г', 196: 'Д', 197: 'Е', 198: 'Ж', 199: 'З',
+      200: 'И', 201: 'Й', 202: 'К', 203: 'Л', 204: 'М', 205: 'Н', 206: 'О', 207: 'П',
+      208: 'Р', 209: 'С', 210: 'Т', 211: 'У', 212: 'Ф', 213: 'Х', 214: 'Ц', 215: 'Ч',
+      216: 'Ш', 217: 'Щ', 218: 'Ъ', 219: 'Ы', 220: 'Ь', 221: 'Э', 222: 'Ю', 223: 'Я',
+      224: 'а', 225: 'б', 226: 'в', 227: 'г', 228: 'д', 229: 'е', 230: 'ж', 231: 'з',
+      232: 'и', 233: 'й', 234: 'к', 235: 'л', 236: 'м', 237: 'н', 238: 'о', 239: 'п',
+      240: 'р', 241: 'с', 242: 'т', 243: 'у', 244: 'ф', 245: 'х', 246: 'ц', 247: 'ч',
+      248: 'ш', 249: 'щ', 250: 'ъ', 251: 'ы', 252: 'ь', 253: 'э', 254: 'ю', 255: 'я'
+    };
+    
+    let result = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const byte = bytes[i];
+      if (byte < 128) {
+        // ASCII символы
+        result += String.fromCharCode(byte);
+      } else if (win1251Map[byte]) {
+        // Символы Windows-1251
+        result += win1251Map[byte];
+      } else {
+        // Неизвестный символ - заменяем на '?'
+        result += '?';
+      }
+    }
+    return result;
   }
   
   sendCommand() {
