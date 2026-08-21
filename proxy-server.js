@@ -1,7 +1,7 @@
-import WebSocket from 'ws';
+import { WebSocketServer } from 'ws';
 import net from 'net';
 import http from 'http';
-import crypto from 'crypto';
+import url from 'url';
 
 const PORT = process.env.PROXY_PORT || 8080;
 
@@ -14,12 +14,14 @@ const server = http.createServer((req, res) => {
   res.end('WebSocket proxy server. Connect via WebSocket.');
 });
 
+const wss = new WebSocketServer({ noServer: true });
+
 server.on('upgrade', (request, socket, head) => {
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  const parsedUrl = url.parse(request.url, true);
   
   // Получаем адрес и порт целевого сервера из query параметров
-  const targetHost = url.searchParams.get('host');
-  const targetPort = parseInt(url.searchParams.get('port'), 10);
+  const targetHost = parsedUrl.query.host;
+  const targetPort = parseInt(parsedUrl.query.port, 10);
 
   if (!targetHost || !targetPort || isNaN(targetPort)) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -38,14 +40,10 @@ server.on('upgrade', (request, socket, head) => {
     console.log(`✅ Подключено к ${targetHost}:${targetPort}`);
   });
 
-  // Создаем WebSocket для клиента
-  const ws = new WebSocket(null, {
-    noServer: true
-  });
-
   // Обработка данных от MUD сервера -> отправка клиенту
   telnetSocket.on('data', (data) => {
-    if (ws.readyState === WebSocket.OPEN) {
+    const ws = Array.from(connections.entries()).find(([_, sock]) => sock === telnetSocket)?.[0];
+    if (ws && ws.readyState === ws.OPEN) {
       // Конвертируем буфер в строку и отправляем клиенту
       ws.send(data.toString('utf8'));
     }
@@ -54,7 +52,8 @@ server.on('upgrade', (request, socket, head) => {
   // Обработка ошибок Telnet соединения
   telnetSocket.on('error', (err) => {
     console.error(`❌ Ошибка Telnet: ${err.message}`);
-    if (ws.readyState === WebSocket.OPEN) {
+    const ws = Array.from(connections.entries()).find(([_, sock]) => sock === telnetSocket)?.[0];
+    if (ws && ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({ error: err.message }));
       ws.close();
     }
@@ -64,51 +63,43 @@ server.on('upgrade', (request, socket, head) => {
   // Обработка закрытия Telnet соединения
   telnetSocket.on('close', () => {
     console.log(`🔌 Соединение с ${targetHost}:${targetPort} закрыто`);
-    if (ws.readyState === WebSocket.OPEN) {
+    const ws = Array.from(connections.entries()).find(([_, sock]) => sock === telnetSocket)?.[0];
+    if (ws && ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({ closed: true }));
       ws.close();
     }
     connections.delete(ws);
   });
 
-  // Сохраняем соединение
-  connections.set(ws, telnetSocket);
+  // Апгрейд соединения до WebSocket
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    // Сохраняем соединение
+    connections.set(ws, telnetSocket);
 
-  // Обработка данных от клиента -> отправка MUD серверу
-  ws.on('message', (message) => {
-    if (telnetSocket.readyState === 'open') {
-      // Отправляем команду с переводом строки
-      telnetSocket.write(message + '\n');
-    }
+    // Обработка данных от клиента -> отправка MUD серверу
+    ws.on('message', (message) => {
+      if (telnetSocket.readyState === 'open') {
+        // Отправляем команду с переводом строки
+        telnetSocket.write(message + '\n');
+      }
+    });
+
+    // Обработка ошибок WebSocket
+    ws.on('error', (err) => {
+      console.error(`❌ Ошибка WebSocket: ${err.message}`);
+      telnetSocket.destroy();
+      connections.delete(ws);
+    });
+
+    // Обработка закрытия WebSocket
+    ws.on('close', () => {
+      console.log(`🔌 WebSocket соединение закрыто`);
+      telnetSocket.destroy();
+      connections.delete(ws);
+    });
+
+    wss.emit('connection', ws, request);
   });
-
-  // Обработка ошибок WebSocket
-  ws.on('error', (err) => {
-    console.error(`❌ Ошибка WebSocket: ${err.message}`);
-    telnetSocket.destroy();
-    connections.delete(ws);
-  });
-
-  // Обработка закрытия WebSocket
-  ws.on('close', () => {
-    console.log(`🔌 WebSocket соединение закрыто`);
-    telnetSocket.destroy();
-    connections.delete(ws);
-  });
-
-  // Завершаем апгрейд до WebSocket
-  const key = request.headers['sec-websocket-key'];
-  const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
-  
-  socket.write([
-    'HTTP/1.1 101 Switching Protocols',
-    'Upgrade: websocket',
-    'Connection: Upgrade',
-    'Sec-WebSocket-Accept: ' + accept
-  ].join('\r\n') + '\r\n\r\n');
-  
-  // Эмитим событие подключения
-  ws.emit('open');
 });
 
 server.listen(PORT, '0.0.0.0', () => {
