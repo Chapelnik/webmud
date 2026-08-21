@@ -3,16 +3,41 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Веб-клиент для MUD (Multi User Dungeon) игр",
+  "description": "Веб-клиент для MUD (Multi User Dungeon) игр с WebSocket-Telnet прокси",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "proxy": "node proxy-server.js",
+    "start": "concurrently \"npm run proxy\" \"npm run dev\""
   },
-  "keywords": ["mud", "game", "client"],
+  "keywords": [
+    "mud",
+    "game",
+    "client",
+    "telnet",
+    "websocket"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "concurrently": "^9.0.0"
+  },
+  "main": "vite.config.js",
+  "dependencies": {
+    "detect-libc": "^2.1.2",
+    "fdir": "^6.5.0",
+    "lightningcss": "^1.33.0",
+    "lightningcss-linux-x64-gnu": "^1.33.0",
+    "lightningcss-linux-x64-musl": "^1.33.0",
+    "nanoid": "^3.3.18",
+    "picocolors": "^1.1.1",
+    "picomatch": "^4.0.5",
+    "postcss": "^8.5.26",
+    "rolldown": "^1.2.5",
+    "source-map-js": "^1.2.1",
+    "tinyglobby": "^0.2.17",
+    "ws": "^8.21.3"
   }
 }
